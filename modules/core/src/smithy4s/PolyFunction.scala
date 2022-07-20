@@ -16,8 +16,6 @@
 
 package smithy4s
 
-import smithy4s.internals.maps.MMap
-
 /**
   * Natural transformation, turning a polymorphic type into another,
   * whilst keeping the type parameter intact.
@@ -40,14 +38,10 @@ trait PolyFunction[F[_], G[_]] { self =>
     */
   final def unsafeMemoise: PolyFunction[F, G] =
     new PolyFunction[F, G] {
-      private val map: MMap[Any, Any] = MMap.empty
+      private[this] val map = new java.util.HashMap[F[_], G[_]]
 
-      def apply[A](fa: F[A]): G[A] = {
-        map
-          .getOrElseUpdate(fa, self(fa))
-          .asInstanceOf[G[A]]
-      }
-
+      def apply[A](fa: F[A]): G[A] =
+        map.computeIfAbsent(fa, (fa: F[_]) => self(fa)).asInstanceOf[G[A]]
     }
 
   /**
@@ -61,17 +55,10 @@ trait PolyFunction[F[_], G[_]] { self =>
       allPossibleInputs: Vector[Existential[F]]
   ): PolyFunction[F, G] =
     new PolyFunction[F, G] {
-      private val map: Map[Any, Any] = {
-        val builder = Map.newBuilder[Any, Any]
-        allPossibleInputs.foreach(input =>
-          builder += input -> self
-            .apply(input.asInstanceOf[F[Any]])
-            .asInstanceOf[Any]
-        )
-        builder.result()
+      private[this] val map = new java.util.HashMap[F[_], G[_]] {
+        allPossibleInputs.foreach(input => put(input, self.apply(input)))
       }
-      def apply[A](input: F[A]): G[A] = {
-        map(input).asInstanceOf[G[A]]
-      }
+
+      def apply[A](input: F[A]): G[A] = map.get(input).asInstanceOf[G[A]]
     }
 }
